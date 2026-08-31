@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Sua chave de ativação do Tage</title>
+  </head>
+  <body style="margin:0;background:#f4f7fb;font-family:Arial,Helvetica,sans-serif;color:#172033">
+    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background:#f4f7fb;padding:32px 16px">
+      <tr>
+        <td align="center">
+          <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="max-width:560px;background:#ffffff;border:1px solid #e5eaf1;border-radius:20px;overflow:hidden">
+            <tr>
+              <td style="background:#080d15;padding:28px 34px">
+                <table role="presentation" cellspacing="0" cellpadding="0">
+                  <tr>
+                    <td>
+                      <img src="{{ .SiteURL }}/taggi-app-icon.png" width="48" height="48" alt="Tage" style="display:block;border:0;border-radius:14px" />
+                    </td>
+                    <td style="padding-left:14px;color:#ffffff;font-size:27px;font-weight:700;letter-spacing:-1px">taggi</td>
+                  </tr>
+                </table>
+              </td>
+            </tr>
+            <tr>
+              <td style="padding:36px 34px 32px">
+                <p style="margin:0 0 10px;color:#1684ff;font-size:12px;font-weight:700;letter-spacing:1.2px;text-transform:uppercase">Ative sua assinatura</p>
+                <h1 style="margin:0;color:#172033;font-size:26px;line-height:1.25">
+                  Olá, {{ if .Data.display_name }}{{ .Data.display_name }}{{ else }}novo integrante{{ end }}!
+                </h1>
+                <p style="margin:18px 0 0;color:#596579;font-size:15px;line-height:1.7">
+                  Sua conta foi criada. Digite a chave abaixo no aplicativo para confirmar seu e-mail e liberar o plano da empresa.
+                </p>
+                <div style="margin-top:26px;border:1px solid #dfe6ef;border-radius:14px;background:#f8fafc;padding:22px;text-align:center">
+                  <p style="margin:0;color:#6a7588;font-size:12px;text-transform:uppercase;letter-spacing:1px">Chave única de ativação</p>
+                  <p style="margin:10px 0 0;color:#172033;font-size:30px;font-weight:700;letter-spacing:7px">{{ .Token }}</p>
+                  <p style="margin:10px 0 0;color:#7a8495;font-size:12px">Esta chave é temporária, de uso único e só deve ser digitada no Tage.</p>
+                </div>
+                <p style="margin:26px 0 0;color:#7a8495;font-size:12px;line-height:1.6">
+                  Se você não criou esta conta, ignore este e-mail. Nunca compartilhe sua senha ou chave de ativação.
+                </p>
+              </td>
+            </tr>
+            <tr>
+              <td style="border-top:1px solid #edf0f5;padding:20px 34px;color:#8b94a4;font-size:12px">
+                Tage · Contagens organizadas para equipes de e-commerce
+              </td>
+            </tr>
+          </table>
+        </td>
+      </tr>
+    </table>
+  </body>
+</html>
