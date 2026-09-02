@@ -10,16 +10,50 @@ const {
   writeUpdateTransition,
 } = require('./persistence.cjs');
 
-const CHECK_INTERVAL_MS = 4 * 60 * 60 * 1000;
-const INITIAL_CHECK_DELAY_MS = 20 * 1000;
+const CHECK_INTERVAL_MS = 15 * 60 * 1000;
+const INITIAL_CHECK_DELAY_MS = 2 * 1000;
+const AUTO_INSTALL_INTERVAL_MS = 3 * 1000;
+const ACTIVE_PHASES = new Set([
+  'checking',
+  'available',
+  'downloading',
+  'ready',
+  'installing',
+  'health-check',
+]);
 
 function normalizeReleaseNotes(value) {
-  if (typeof value === 'string') return value;
-  if (!Array.isArray(value)) return '';
-  return value
-    .map((item) => (typeof item === 'string' ? item : item?.note))
+  const raw =
+    typeof value === 'string'
+      ? value
+      : Array.isArray(value)
+        ? value
+            .map((item) => (typeof item === 'string' ? item : item?.note))
+            .filter(Boolean)
+            .join('\n')
+        : '';
+  if (!raw) return '';
+
+  return raw
+    .replace(/<\s*li[^>]*>/gi, '• ')
+    .replace(/<\s*br\s*\/?\s*>/gi, '\n')
+    .replace(/<\/\s*(?:h[1-6]|p|div|li|ul|ol)\s*>/gi, '\n')
+    .replace(/<[^>]+>/g, '')
+    .replace(/&nbsp;/gi, ' ')
+    .replace(/&amp;/gi, '&')
+    .replace(/&lt;/gi, '<')
+    .replace(/&gt;/gi, '>')
+    .replace(/&quot;/gi, '"')
+    .replace(/&#39;|&apos;/gi, "'")
+    .replace(/&#(\d+);/g, (_match, code) => String.fromCodePoint(Number(code)))
+    .replace(/&#x([0-9a-f]+);/gi, (_match, code) =>
+      String.fromCodePoint(Number.parseInt(code, 16)),
+    )
+    .split(/\r?\n/)
+    .map((line) => line.trim())
     .filter(Boolean)
-    .join('\n');
+    .join('\n')
+    .trim();
 }
 
 function createTaggiUpdater({ buildChannel, buildNumber }) {
@@ -30,12 +64,23 @@ function createTaggiUpdater({ buildChannel, buildNumber }) {
   let window = null;
   let checkTimer = null;
   let initialTimer = null;
-  let effectiveChannel = buildChannel === 'local' ? 'local' : 'stable';
+  let installTimer = null;
+  let installPromise = null;
+  let stopped = false;
+  let effectiveChannel =
+    buildChannel === 'local'
+      ? 'local'
+      : buildChannel === 'beta'
+        ? 'beta'
+        : 'stable';
   let blockedVersions = new Set();
   let minimumSupportedVersion = null;
   let latestVersion = null;
   let downloadedInfo = null;
   let backupPath = null;
+  let checkPromise = null;
+  let downloadPromise = null;
+  let backupPromise = null;
   let state = {
     phase: enabled ? 'idle' : 'disabled',
     currentVersion: app.getVersion(),
@@ -78,21 +123,62 @@ function createTaggiUpdater({ buildChannel, buildNumber }) {
       broadcast({ phase: 'disabled' });
       return state;
     }
-    applyChannel();
-    try {
-      await autoUpdater.checkForUpdates();
-    } catch (error) {
-      logger.error('Falha ao verificar atualização', error);
-      broadcast({
-        phase: 'error',
-        message: 'Não foi possível verificar atualizações agora. O Tage atual continua funcionando.',
-        errorCode: error?.code ?? 'UPDATE_CHECK_FAILED',
-      });
+    if (
+      checkPromise ||
+      state.phase === 'available' ||
+      state.phase === 'downloading' ||
+      state.phase === 'ready' ||
+      state.phase === 'installing'
+    ) {
+      return state;
     }
+    applyChannel();
+    checkPromise = autoUpdater
+      .checkForUpdates()
+      .catch((error) => {
+        logger.error('Falha ao verificar atualização', error);
+        broadcast({
+          phase: 'error',
+          message:
+            'Não foi possível verificar atualizações agora. O Tage atual continua funcionando.',
+          errorCode: error?.code ?? 'UPDATE_CHECK_FAILED',
+        });
+      })
+      .finally(() => {
+        checkPromise = null;
+      });
+    await checkPromise;
     return state;
   }
 
+  function downloadAvailableUpdate(info) {
+    if (downloadPromise || state.phase === 'ready') return;
+    downloadedInfo = info;
+    broadcast({
+      phase: 'available',
+      availableVersion: info.version,
+      releaseNotes: normalizeReleaseNotes(info.releaseNotes),
+      message: 'Nova versão encontrada. Iniciando download em segundo plano...',
+      errorCode: undefined,
+    });
+    downloadPromise = autoUpdater
+      .downloadUpdate()
+      .catch((error) => {
+        logger.error('Falha no download da atualização', error);
+        broadcast({
+          phase: 'error',
+          message:
+            'O download foi interrompido. O Tage atual não foi alterado e tentará novamente depois.',
+          errorCode: error?.code ?? 'UPDATE_DOWNLOAD_FAILED',
+        });
+      })
+      .finally(() => {
+        downloadPromise = null;
+      });
+  }
+
   autoUpdater.on('checking-for-update', () => {
+    if (['downloading', 'ready', 'installing'].includes(state.phase)) return;
     broadcast({
       phase: 'checking',
       message: 'Verificando atualizações...',
@@ -101,6 +187,7 @@ function createTaggiUpdater({ buildChannel, buildNumber }) {
   });
 
   autoUpdater.on('update-not-available', () => {
+    if (['downloading', 'ready', 'installing'].includes(state.phase)) return;
     broadcast({
       phase: 'up-to-date',
       message: 'O Tage está atualizado.',
@@ -115,29 +202,17 @@ function createTaggiUpdater({ buildChannel, buildNumber }) {
       broadcast({
         phase: 'blocked',
         availableVersion: info.version,
-        message: 'Uma versão retirada de circulação foi ignorada com segurança.',
+        message:
+          'Uma versão retirada de circulação foi ignorada com segurança.',
       });
       return;
     }
 
-    downloadedInfo = info;
-    broadcast({
-      phase: 'available',
-      availableVersion: info.version,
-      releaseNotes: normalizeReleaseNotes(info.releaseNotes),
-      message: 'Nova versão encontrada. Iniciando download em segundo plano...',
-    });
-    void autoUpdater.downloadUpdate().catch((error) => {
-      logger.error('Falha no download da atualização', error);
-      broadcast({
-        phase: 'error',
-        message: 'O download foi interrompido. O Tage atual não foi alterado e tentará novamente depois.',
-        errorCode: error?.code ?? 'UPDATE_DOWNLOAD_FAILED',
-      });
-    });
+    downloadAvailableUpdate(info);
   });
 
   autoUpdater.on('download-progress', (progress) => {
+    if (downloadedInfo && blockedVersions.has(downloadedInfo.version)) return;
     broadcast({
       phase: 'downloading',
       progress: Math.max(0, Math.min(100, Math.round(progress.percent))),
@@ -146,13 +221,21 @@ function createTaggiUpdater({ buildChannel, buildNumber }) {
   });
 
   autoUpdater.on('update-downloaded', (info) => {
+    if (!enabled || stopped || blockedVersions.has(info.version)) return;
+    if (
+      backupPromise ||
+      (['ready', 'installing'].includes(state.phase) && downloadedInfo?.version === info.version)
+    ) {
+      return;
+    }
     downloadedInfo = info;
-    void createUpdateBackup(window, userDataPath, {
+    backupPromise = createUpdateBackup(window, userDataPath, {
       fromVersion: app.getVersion(),
       toVersion: info.version,
       channel: effectiveChannel,
     })
       .then((createdBackupPath) => {
+        if (stopped || blockedVersions.has(info.version)) return;
         backupPath = createdBackupPath;
         logger.info('Atualização pronta e backup verificado', info.version);
         broadcast({
@@ -160,21 +243,30 @@ function createTaggiUpdater({ buildChannel, buildNumber }) {
           progress: 100,
           availableVersion: info.version,
           releaseNotes: normalizeReleaseNotes(info.releaseNotes),
-          message: 'Atualização pronta.',
+          message: 'Pronta. O Tage reiniciará sozinho após 30 segundos sem edição ou envio em andamento.',
         });
+        if (!stopped && !installTimer) {
+          installTimer = setInterval(() => void installDownloadedUpdate(), AUTO_INSTALL_INTERVAL_MS);
+        }
       })
       .catch((error) => {
         logger.error('Backup pré-atualização falhou', error);
         broadcast({
           phase: 'error',
-          message: 'A atualização não será instalada porque o backup de segurança não pôde ser confirmado.',
+          message:
+            'A atualização não será instalada porque o backup de segurança não pôde ser confirmado.',
           errorCode: 'BACKUP_FAILED',
         });
+      })
+      .finally(() => {
+        backupPromise = null;
       });
   });
 
   autoUpdater.on('error', (error) => {
     logger.error('Erro do updater', error);
+    if (state.phase === 'ready') return;
+    cancelRendererLock();
     broadcast({
       phase: 'error',
       message: 'A atualização falhou. A versão instalada permanece disponível.',
@@ -190,7 +282,9 @@ function createTaggiUpdater({ buildChannel, buildNumber }) {
   function configureReleasePolicy(policy = {}) {
     blockedVersions = new Set(
       Array.isArray(policy.blockedVersions)
-        ? policy.blockedVersions.filter((version) => typeof version === 'string')
+        ? policy.blockedVersions.filter(
+            (version) => typeof version === 'string',
+          )
         : [],
     );
     minimumSupportedVersion =
@@ -203,20 +297,65 @@ function createTaggiUpdater({ buildChannel, buildNumber }) {
     const requestedChannel = policy.channel === 'beta' ? 'beta' : 'stable';
     effectiveChannel = buildChannel === 'local' ? 'local' : requestedChannel;
     applyChannel();
-    broadcast({
-      phase: enabled ? 'idle' : 'disabled',
-      message:
-        effectiveChannel === 'beta'
-          ? 'Este dispositivo está autorizado para receber versões Beta.'
-          : 'Este dispositivo recebe somente versões Stable.',
-    });
-    if (enabled) void checkForUpdates();
+    if (downloadedInfo && blockedVersions.has(downloadedInfo.version)) {
+      if (installTimer) clearInterval(installTimer);
+      installTimer = null;
+      cancelRendererLock();
+      broadcast({ phase: 'blocked', message: 'Uma versão retirada de circulação foi ignorada com segurança.' });
+      return state;
+    }
+    if (!ACTIVE_PHASES.has(state.phase)) {
+      broadcast({
+        phase: enabled ? 'idle' : 'disabled',
+        message:
+          effectiveChannel === 'beta'
+            ? 'Este dispositivo está autorizado para receber versões Beta.'
+            : 'Este dispositivo recebe somente versões Stable.',
+      });
+    } else {
+      broadcast();
+    }
+    if (enabled && !ACTIVE_PHASES.has(state.phase)) void checkForUpdates();
     return state;
   }
 
+  function cancelRendererLock() {
+    if (window && !window.isDestroyed()) {
+      void window.webContents.executeJavaScript('window.taggiUpdateGuard?.cancel()')
+        .catch((error) => logger.warn('Não foi possível liberar a interface', error));
+    }
+  }
+
   function installDownloadedUpdate() {
-    if (state.phase !== 'ready' || !downloadedInfo || !backupPath) {
+    if (installPromise) return installPromise;
+    installPromise = prepareAndInstall().finally(() => { installPromise = null; });
+    return installPromise;
+  }
+
+  async function prepareAndInstall() {
+    if (!enabled || stopped || state.phase !== 'ready' || !downloadedInfo || !backupPath) {
       return { ok: false, reason: 'UPDATE_NOT_READY' };
+    }
+    if (blockedVersions.has(downloadedInfo.version)) return { ok: false, reason: 'UPDATE_BLOCKED' };
+    try {
+      const safe = window && !window.isDestroyed() && await window.webContents.executeJavaScript(
+        'window.taggiUpdateGuard?.prepare() === true',
+      );
+      if (!safe) return { ok: false, reason: 'WORK_IN_PROGRESS' };
+      broadcast({ phase: 'installing', message: 'Aplicando atualização. O Tage reabrirá sozinho; basta aguardar.' });
+      // Refresh the backup only after locking input and new writes, not just at download time.
+      backupPath = await createUpdateBackup(window, userDataPath, {
+        fromVersion: app.getVersion(), toVersion: downloadedInfo.version, channel: effectiveChannel,
+      });
+      if (stopped || blockedVersions.has(downloadedInfo.version)) {
+        cancelRendererLock();
+        return { ok: false, reason: 'UPDATE_CANCELLED' };
+      }
+    } catch (error) {
+      logger.error('Não foi possível preparar a instalação automática', error);
+      cancelRendererLock();
+      broadcast({ phase: 'error', message: 'Não foi possível preparar a atualização com segurança. O Tage continua funcionando.', errorCode: 'BACKUP_FAILED' });
+      return { ok: false, reason: 'BACKUP_FAILED' };
     }
     const transition = {
       status: 'pending-install',
@@ -226,10 +365,32 @@ function createTaggiUpdater({ buildChannel, buildNumber }) {
       backupPath,
       createdAt: new Date().toISOString(),
     };
-    writeUpdateTransition(userDataPath, transition);
-    logger.info('Instalação autorizada pelo usuário', transition);
-    autoUpdater.quitAndInstall(false, true);
-    return { ok: true };
+    try {
+      writeUpdateTransition(userDataPath, transition);
+      logger.info('Instalação automática iniciada após verificação de segurança', transition);
+      // electron-updater 6.x: silent install, then reopen the app automatically.
+      autoUpdater.quitAndInstall(true, true);
+      return state.phase === 'error' ? { ok: false, reason: 'UPDATE_INSTALL_FAILED' } : { ok: true };
+    } catch (error) {
+      logger.error('Falha ao iniciar a instalação da atualização', error);
+      cancelRendererLock();
+      try {
+        writeUpdateTransition(userDataPath, {
+          ...transition,
+          status: 'install-start-failed',
+          checkedAt: new Date().toISOString(),
+        });
+      } catch (transitionError) {
+        logger.error('Não foi possível registrar a falha de instalação', transitionError);
+      }
+      broadcast({
+        phase: 'error',
+        message:
+          'Não foi possível reiniciar automaticamente. Feche e abra o Tage e tente novamente.',
+        errorCode: error?.code ?? 'UPDATE_INSTALL_FAILED',
+      });
+      return { ok: false, reason: 'UPDATE_INSTALL_FAILED' };
+    }
   }
 
   function reportHealthy(details = {}) {
@@ -261,6 +422,7 @@ function createTaggiUpdater({ buildChannel, buildNumber }) {
   }
 
   function start() {
+    stopped = false;
     const transition = readUpdateTransition(userDataPath);
     if (transition?.status === 'pending-install') {
       if (transition.toVersion === app.getVersion()) {
@@ -274,17 +436,27 @@ function createTaggiUpdater({ buildChannel, buildNumber }) {
           status: 'not-applied',
           checkedAt: new Date().toISOString(),
         });
-        logger.warn('A atualização pendente não foi aplicada; versão atual preservada.');
+        logger.warn(
+          'A atualização pendente não foi aplicada; versão atual preservada.',
+        );
       }
     }
     if (!enabled) return;
-    initialTimer = setTimeout(() => void checkForUpdates(), INITIAL_CHECK_DELAY_MS);
+    initialTimer = setTimeout(
+      () => void checkForUpdates(),
+      INITIAL_CHECK_DELAY_MS,
+    );
     checkTimer = setInterval(() => void checkForUpdates(), CHECK_INTERVAL_MS);
   }
 
   function stop() {
+    stopped = true;
     if (initialTimer) clearTimeout(initialTimer);
     if (checkTimer) clearInterval(checkTimer);
+    if (installTimer) clearInterval(installTimer);
+    initialTimer = null;
+    checkTimer = null;
+    installTimer = null;
   }
 
   function getAppInfo() {
@@ -314,4 +486,7 @@ function createTaggiUpdater({ buildChannel, buildNumber }) {
   };
 }
 
-module.exports = { createTaggiUpdater };
+module.exports = {
+  createTaggiUpdater,
+  normalizeReleaseNotes,
+};

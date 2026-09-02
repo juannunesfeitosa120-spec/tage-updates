@@ -7,6 +7,7 @@ import {
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
 } from 'react';
 import type { Session, User } from '@supabase/supabase-js';
@@ -27,7 +28,7 @@ type AuthContextValue = {
   refreshMemberships: (preferredGroupId?: string) => Promise<void>;
   setActiveGroupId: (groupId: string) => void;
   clearAccessNotice: () => void;
-  signOut: () => Promise<void>;
+  signOut: (notice?: string) => Promise<void>;
 };
 
 const AuthContext = createContext<AuthContextValue | null>(null);
@@ -50,15 +51,24 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [activeGroupId, setActiveGroupIdState] = useState<string | null>(null);
   const [accessNotice, setAccessNotice] = useState('');
   const sessionUserId = session?.user.id;
+  const refreshRevision = useRef(0);
 
-  const refreshMemberships = useCallback(async (_preferredGroupId?: string) => {
+  const refreshMemberships = useCallback(async (preferredGroupId?: string) => {
     if (!supabase) return;
+    const revision = ++refreshRevision.current;
     const sessionResult = await supabase.auth.getSession();
+    if (revision !== refreshRevision.current) return;
     const currentUser = sessionResult.data.session?.user;
     if (!currentUser) {
       setMemberships([]);
       setActiveGroupIdState(null);
       return;
+    }
+
+    // Preserve an explicit selection if a concurrent realtime refresh supersedes it.
+    if (preferredGroupId) {
+      localStorage.setItem(`${STORAGE_PREFIX}active-group:${currentUser.id}`, preferredGroupId);
+      localStorage.removeItem(`${STORAGE_PREFIX}disconnected:${currentUser.id}`);
     }
 
     const memberResult = await supabase
@@ -68,11 +78,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       .eq('status', 'active')
       .order('joined_at');
 
+    if (revision !== refreshRevision.current) return;
     if (memberResult.error) throw memberResult.error;
     const groupIds = (memberResult.data ?? []).map((member) => member.group_id);
     if (!groupIds.length) {
       setMemberships([]);
       setActiveGroupIdState(null);
+      localStorage.removeItem(`${STORAGE_PREFIX}active-group:${currentUser.id}`);
       return;
     }
 
@@ -89,6 +101,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         .in('group_id', groupIds),
     ]);
 
+    if (revision !== refreshRevision.current) return;
     if (groupResult.error) throw groupResult.error;
     if (preferenceResult.error) throw preferenceResult.error;
     const groups = new Map((groupResult.data ?? []).map((group) => [group.id, group]));
@@ -112,10 +125,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     });
 
     const storageKey = `${STORAGE_PREFIX}active-group:${currentUser.id}`;
-    const nextActive = next[0]?.groupId ?? null;
+    const disconnectedKey = `${STORAGE_PREFIX}disconnected:${currentUser.id}`;
+    if (preferredGroupId) localStorage.removeItem(disconnectedKey);
+    const intentionallyDisconnected =
+      !preferredGroupId && localStorage.getItem(disconnectedKey) === '1';
+    const savedGroupId = localStorage.getItem(storageKey);
+    const requestedGroupId = preferredGroupId || savedGroupId;
+    const nextActive = intentionallyDisconnected
+      ? null
+      : next.find((item) => item.groupId === requestedGroupId)?.groupId ??
+        next[0]?.groupId ??
+        null;
     setMemberships(next);
     setActiveGroupIdState(nextActive);
     if (nextActive) localStorage.setItem(storageKey, nextActive);
+    else localStorage.removeItem(storageKey);
   }, []);
 
   useEffect(() => {
@@ -183,17 +207,26 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const setActiveGroupId = useCallback((groupId: string) => {
     if (!session || !memberships.some((item) => item.groupId === groupId)) return;
+    refreshRevision.current += 1;
+    localStorage.removeItem(`${STORAGE_PREFIX}disconnected:${session.user.id}`);
     localStorage.setItem(`${STORAGE_PREFIX}active-group:${session.user.id}`, groupId);
     setActiveGroupIdState(groupId);
   }, [memberships, session]);
 
-  const signOut = useCallback(async () => {
-    setAccessNotice('');
-    clearTaggiStorage();
-    setMemberships([]);
+  const signOut = useCallback(async (notice = '') => {
+    refreshRevision.current += 1;
+    setAccessNotice(notice);
+    if (session?.user.id) {
+      localStorage.setItem(
+        `${STORAGE_PREFIX}disconnected:${session.user.id}`,
+        '1',
+      );
+      localStorage.removeItem(
+        `${STORAGE_PREFIX}active-group:${session.user.id}`,
+      );
+    }
     setActiveGroupIdState(null);
-    await supabase?.auth.signOut();
-  }, []);
+  }, [session?.user.id]);
 
   const activeMembership = memberships.find((item) => item.groupId === activeGroupId) ?? null;
   const clearAccessNotice = useCallback(() => setAccessNotice(''), []);
@@ -208,6 +241,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (checking) return;
       checking = true;
       try {
+        const groupResult = await client
+          .from('taggi_groups')
+          .select('id')
+          .eq('id', activeMembership.groupId)
+          .eq('status', 'active')
+          .maybeSingle();
+        if (!alive || groupResult.error) return;
+        if (!groupResult.data) {
+          await signOut(
+            'Esta equipe foi excluída ou seu acesso foi encerrado. Seus outros acessos salvos foram preservados.',
+          );
+          await refreshMemberships();
+          return;
+        }
         const result = await client.rpc('taggi_entitlement', {
           p_group_id: activeMembership.groupId,
         });
@@ -238,7 +285,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       window.removeEventListener('focus', onFocus);
       window.removeEventListener('online', onFocus);
     };
-  }, [activeMembership]);
+  }, [activeMembership?.groupId, refreshMemberships, signOut]);
 
   const value = useMemo<AuthContextValue>(() => ({
     booting,

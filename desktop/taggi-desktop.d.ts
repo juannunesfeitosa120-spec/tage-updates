@@ -19,6 +19,7 @@ export type TaggiUpdatePhase =
   | 'available'
   | 'downloading'
   | 'ready'
+  | 'installing'
   | 'up-to-date'
   | 'blocked'
   | 'health-check'
@@ -48,6 +49,11 @@ type TaggiReleasePolicy = {
 
 declare global {
   interface Window {
+    taggiUpdateGuard?: {
+      prepare: () => boolean;
+      cancel: () => void;
+      dispose: () => void;
+    };
     taggiDesktop?: {
       getAppInfo: () => Promise<TaggiAppInfo>;
       getUpdateState: () => Promise<TaggiUpdateState>;
@@ -66,6 +72,7 @@ declare global {
         title: string;
         body: string;
       }) => Promise<{ ok: boolean }>;
+      copyText: (value: string) => Promise<{ ok: boolean }>;
       onUpdateState: (
         listener: (state: TaggiUpdateState) => void,
       ) => () => void;

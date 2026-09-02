@@ -173,7 +173,11 @@ function StoreAutocomplete({
       );
       return;
     }
-    if ((event.key === 'Tab' || event.key === 'Enter') && open && matches[activeIndex]) {
+    if (
+      (event.key === 'Tab' || event.key === 'Enter') &&
+      open &&
+      matches[activeIndex]
+    ) {
       if (event.key === 'Enter') event.preventDefault();
       choose(matches[activeIndex]);
     }
@@ -187,19 +191,22 @@ function StoreAutocomplete({
         onBlur={() => window.setTimeout(() => setOpen(false), 120)}
         onChange={(event) => {
           const value = event.target.value;
+          const normalized = value.trim().toLocaleLowerCase('pt-BR');
+          const exact = stores.find(
+            (store) =>
+              store.name.trim().toLocaleLowerCase('pt-BR') === normalized,
+          );
           setQuery(value);
           setOpen(true);
           setActiveIndex(0);
-          onValidityChange(
-            Boolean(
-              selected &&
-                selected.name.toLocaleLowerCase('pt-BR') ===
-                  value.trim().toLocaleLowerCase('pt-BR'),
-            ),
-          );
+          if (exact) onSelect(exact.id);
+          onValidityChange(Boolean(exact));
         }}
         onKeyDown={handleKeyDown}
-        placeholder="Sua loja"
+        placeholder={
+          stores.length ? 'Digite o nome da loja' : 'Cadastre uma loja'
+        }
+        disabled={!stores.length}
         role="combobox"
         aria-label="Sua loja"
         aria-expanded={open}
@@ -237,10 +244,7 @@ function QuickLaunch({
   onStoreChange,
   onExpressionChange,
   onLaunch,
-}: Omit<
-  HomeDashboardProps,
-  'filteredPlatforms' | 'total' | 'onOccurrence'
->) {
+}: Omit<HomeDashboardProps, 'filteredPlatforms' | 'total' | 'onOccurrence'>) {
   const selectedPlatform =
     platforms.find((platform) => platform.id === selectedPlatformId) ??
     platforms[0];
@@ -258,14 +262,18 @@ function QuickLaunch({
   }
 
   return (
-    <form className="surface-panel quick-launch-card" onSubmit={submit} noValidate>
+    <form
+      className="surface-panel quick-launch-card"
+      onSubmit={submit}
+      noValidate
+    >
       <header>
         <span aria-hidden="true">
           <Rocket />
         </span>
         <div>
           <h2>Lançamento rápido</h2>
-          <p>Selecione a plataforma, informe sua loja e quantidade.</p>
+          <p>Selecione a plataforma, digite a loja e informe a quantidade.</p>
         </div>
       </header>
 

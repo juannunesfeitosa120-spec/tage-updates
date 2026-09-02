@@ -14,6 +14,7 @@ import {
   BarChart3,
   Calculator,
   Check,
+  CheckCircle2,
   ChevronDown,
   Copy,
   Download,
@@ -34,7 +35,6 @@ import {
   PackageOpen,
   Plus,
   Rocket,
-  RotateCcw,
   RefreshCw,
   Search,
   Settings,
@@ -44,11 +44,10 @@ import {
   Trash2,
   Users,
   Wifi,
-  WifiOff,
 } from 'lucide-react';
 import {
-  Bar,
-  BarChart,
+  Area,
+  AreaChart,
   CartesianGrid,
   ResponsiveContainer,
   Tooltip,
@@ -57,9 +56,13 @@ import {
 } from 'recharts';
 
 import { AccessPanel } from '@/components/taggi/access-panel';
+import { TeamDeletionPanel } from '@/components/taggi/team-deletion-panel';
 import { ChatPanel } from '@/components/taggi/chat-panel';
 import { HomeDashboard } from '@/components/taggi/home-dashboard';
-import { InventoryPanel } from '@/components/taggi/inventory-panel';
+import {
+  InventoryAdminPanel,
+  InventoryPanel,
+} from '@/components/taggi/inventory-panel';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
 import {
@@ -147,7 +150,7 @@ type HistoryEvent = {
 const navigation = [
   { id: 'home' as const, label: 'Início', icon: Home },
   { id: 'launch' as const, label: 'Lançamento', icon: Rocket },
-  { id: 'inventory' as const, label: 'Insumo', icon: PackageOpen },
+  { id: 'inventory' as const, label: 'Insumos', icon: PackageOpen },
   { id: 'history' as const, label: 'Histórico', icon: History },
   { id: 'chat' as const, label: 'Chat', icon: MessageCircle },
   { id: 'admin' as const, label: 'Administração', icon: LockKeyhole },
@@ -170,23 +173,73 @@ const accentColors = [
 const UI_PREFERENCES_KEY = 'taggi:v1:ui-preferences';
 const tutorialSlides = [
   {
-    title: 'Contagem compartilhada',
-    text: 'Escolha a plataforma, informe a quantidade e confirme. Toda a equipe verá o lançamento em tempo real.',
-    icon: Calculator,
-  },
-  {
-    title: 'Acesso operacional simples',
-    text: 'Cada pessoa informa seu nome e a senha da operação. O dispositivo entra na equipe automaticamente.',
+    title: 'Sua equipe no Tage',
+    text: 'Cada equipe possui um espaço exclusivo, vazio e sincronizado entre os computadores.',
+    steps: [
+      'Quem cria a equipe entra automaticamente como Gestor.',
+      'Abra o menu do perfil para copiar o código exclusivo da equipe.',
+      'Os funcionários escolhem Entrar com código e usam esse mesmo código no primeiro acesso.',
+    ],
     icon: Users,
   },
   {
-    title: 'Histórico mensal auditável',
-    text: 'Lançamentos, ocorrências, fechamentos e correções ficam preservados e consolidados mês a mês.',
+    title: 'Primeiro: plataformas e lojas',
+    text: 'Comece a operação criando a estrutura que sua equipe realmente usa.',
+    steps: [
+      'Abra Administração e informe a senha criada pelo Gestor ao formar a equipe.',
+      'Entre em Plataformas e lojas e clique em Nova plataforma.',
+      'Cadastre a primeira loja. Depois use Configurar para adicionar as demais lojas dessa plataforma.',
+    ],
+    icon: Store,
+  },
+  {
+    title: 'Lançamento rápido',
+    text: 'Registre uma contagem inteira sem tirar as mãos do teclado.',
+    steps: [
+      'Selecione a plataforma; somente as lojas vinculadas a ela serão sugeridas.',
+      'Digite o nome da loja e pressione TAB para completar.',
+      'Informe a quantidade na mesma linha e pressione ENTER para lançar.',
+    ],
+    icon: Rocket,
+  },
+  {
+    title: 'Controle de insumos',
+    text: 'Cadastre produtos, conte o estoque e acompanhe cada movimentação.',
+    steps: [
+      'Use Editar insumo para adicionar itens e ajustar quantidades.',
+      'Marque urgências de compra e finalize o inventário para avisar a Administração.',
+      'Use Dar baixa sempre que um item for consumido; o estoque é validado no servidor.',
+    ],
+    icon: PackageOpen,
+  },
+  {
+    title: 'Equipe e chat',
+    text: 'Tudo é sincronizado entre os computadores conectados pelo mesmo código da equipe.',
+    steps: [
+      'Veja quem está online e converse no grupo ou em particular.',
+      'Fotos aparecem diretamente na conversa; outros arquivos continuam disponíveis para download.',
+      'A Administração permite alterar cargos e revogar acessos.',
+    ],
+    icon: MessageCircle,
+  },
+  {
+    title: 'Histórico e fechamento diário',
+    text: 'O Tage preserva as contagens de forma organizada e auditável.',
+    steps: [
+      'Os lançamentos do dia aparecem em tempo real para toda a equipe.',
+      'À meia-noite, as contagens são confirmadas, zeradas e enviadas ao Histórico.',
+      'Consulte os consolidados por mês e registre correções quando necessário.',
+    ],
     icon: History,
   },
   {
-    title: 'Administração protegida',
-    text: 'A senha administrativa é validada no servidor e permite gerenciar os cargos da equipe.',
+    title: 'Acesso protegido',
+    text: 'O código conecta o dispositivo à equipe e a senha administrativa protege as configurações.',
+    steps: [
+      'Crie uma equipe nova ou use o código exclusivo para entrar em uma existente.',
+      'Depois disso, o Tage mantém a sessão neste computador até você se desconectar.',
+      'Use a senha da Administração definida pelo Gestor ao criar a equipe.',
+    ],
     icon: ShieldCheck,
   },
 ];
@@ -223,6 +276,19 @@ const formatRemoteTime = (value: string) =>
     minute: '2-digit',
     timeZone: 'America/Sao_Paulo',
   }).format(new Date(value));
+
+async function copyText(text: string) {
+  if (window.taggiDesktop?.copyText) {
+    const result = await window.taggiDesktop.copyText(text);
+    return result.ok;
+  }
+  try {
+    await navigator.clipboard.writeText(text);
+    return true;
+  } catch {
+    return false;
+  }
+}
 
 function evaluateExpression(expression: string) {
   const normalized = expression.replace(/\s/g, '');
@@ -275,11 +341,7 @@ function BrandMark({
   }
   return (
     <div className="tage-brand max-sm:hidden">
-      <img
-        src="./taggi-app-icon.png"
-        alt=""
-        className="tage-brand-icon"
-      />
+      <img src="./taggi-app-icon.png" alt="" className="tage-brand-icon" />
       <span
         className="max-lg:hidden"
         style={{ color: isDark ? '#f8fafc' : '#111318' }}
@@ -339,6 +401,7 @@ function TaggiWorkspace() {
   const [historyEvents, setHistoryEvents] = useState<HistoryEvent[]>([]);
   const [search, setSearch] = useState('');
   const [profileOpen, setProfileOpen] = useState(false);
+  const [teamAccessOpen, setTeamAccessOpen] = useState(false);
   const [avatarPath, setAvatarPath] = useState('');
   const [avatarUrl, setAvatarUrl] = useState('');
   const [feedbackOpen, setFeedbackOpen] = useState(false);
@@ -363,6 +426,8 @@ function TaggiWorkspace() {
   const [correctionValue, setCorrectionValue] = useState('');
   const [correctionReason, setCorrectionReason] = useState('');
   const [toast, setToast] = useState('');
+  const [inventoryUnread, setInventoryUnread] = useState(0);
+  const [dayClosed, setDayClosed] = useState(false);
   const [appConfirm, setAppConfirm] = useState<{
     title: string;
     description: string;
@@ -391,7 +456,7 @@ function TaggiWorkspace() {
     'connecting' | 'connected' | 'error'
   >('connecting');
   const [preferencesLoaded, setPreferencesLoaded] = useState(false);
-  const { appInfo, updateState, checkForUpdates, installUpdate } =
+  const { appInfo, updateState, checkForUpdates } =
     useDesktopUpdates();
 
   const isDark = theme === 'dark' || (theme === 'auto' && systemDark);
@@ -401,7 +466,7 @@ function TaggiWorkspace() {
     updateState.minimumSupportedVersion &&
     compareVersions(appInfo.version, updateState.minimumSupportedVersion) < 0,
   );
-  const updateBusy = ['checking', 'available', 'downloading'].includes(
+  const updateBusy = ['checking', 'available', 'downloading', 'ready', 'installing'].includes(
     updateState.phase,
   );
   const resolvedPlatformColor =
@@ -484,6 +549,7 @@ function TaggiWorkspace() {
         eventResult,
         memberResult,
         profileResult,
+        dailyCycleResult,
       ] = await Promise.all([
         supabase
           .from('taggi_platforms')
@@ -512,6 +578,12 @@ function TaggiWorkspace() {
           .eq('status', 'active')
           .order('display_name'),
         supabase.from('taggi_profiles').select('user_id,avatar_url'),
+        supabase
+          .from('taggi_daily_cycles')
+          .select('id,close_mode,close_reason,closed_by_name,closed_at')
+          .eq('group_id', groupId)
+          .eq('work_date', day)
+          .limit(1),
       ]);
 
       const firstError =
@@ -519,10 +591,12 @@ function TaggiWorkspace() {
         storeResult.error ??
         eventResult.error ??
         memberResult.error ??
-        profileResult.error;
+        profileResult.error ??
+        dailyCycleResult.error;
       if (firstError) {
-        setNetworkState('error');
-        setToast(firstError.message);
+        const offline = typeof navigator !== 'undefined' && !navigator.onLine;
+        setNetworkState(offline ? 'error' : 'connecting');
+        setToast(readableError(firstError));
         return;
       }
 
@@ -623,6 +697,7 @@ function TaggiWorkspace() {
       const ownAvatarPath = avatarPaths.get(session?.user.id ?? '') ?? '';
       setAvatarPath(ownAvatarPath ?? '');
       setAvatarUrl(avatarUrls.get(session?.user.id ?? '') ?? '');
+      setDayClosed((dailyCycleResult.data?.length ?? 0) > 0);
       setNetworkState('connected');
     },
     [session?.user.id],
@@ -635,6 +710,20 @@ function TaggiWorkspace() {
     media.addEventListener('change', update);
     return () => media.removeEventListener('change', update);
   }, []);
+
+  useEffect(() => {
+    const onOffline = () => setNetworkState('error');
+    const onOnline = () => {
+      setNetworkState('connecting');
+      if (groupSession?.groupId) void loadGroupData(groupSession.groupId);
+    };
+    window.addEventListener('offline', onOffline);
+    window.addEventListener('online', onOnline);
+    return () => {
+      window.removeEventListener('offline', onOffline);
+      window.removeEventListener('online', onOnline);
+    };
+  }, [groupSession?.groupId, loadGroupData]);
 
   useEffect(() => {
     try {
@@ -713,7 +802,7 @@ function TaggiWorkspace() {
     let observedWorkDate = todaySaoPaulo();
     const reloadNow = () => {
       void loadGroupData(groupId);
-      void refreshMemberships(groupId);
+      void refreshMemberships();
     };
     const reload = () => {
       if (reloadTimer) window.clearTimeout(reloadTimer);
@@ -744,13 +833,23 @@ function TaggiWorkspace() {
       )
       .on(
         'postgres_changes',
+        { event: '*', schema: 'public', table: 'taggi_daily_cycles', filter },
+        reload,
+      )
+      .on(
+        'postgres_changes',
         { event: '*', schema: 'public', table: 'taggi_group_members', filter },
+        reload,
+      )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'taggi_profiles' },
         reload,
       )
       .subscribe((status) => {
         if (status === 'SUBSCRIBED') setNetworkState('connected');
         else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT')
-          setNetworkState('error');
+          setNetworkState(navigator.onLine ? 'connecting' : 'error');
         else setNetworkState('connecting');
       });
 
@@ -862,6 +961,10 @@ function TaggiWorkspace() {
 
   async function confirmLaunch(event?: FormEvent) {
     event?.preventDefault();
+    if (dayClosed) {
+      setToast('As contagens de hoje já foram finalizadas pela Administração.');
+      return;
+    }
     if (
       !supabase ||
       !groupSession ||
@@ -888,9 +991,9 @@ function TaggiWorkspace() {
     setToast(String(launchResult) + ' etiquetas adicionadas');
   }
 
-  async function resetDailyCounts() {
+  async function closeOperationalDay() {
     if (!supabase || !groupSession || !adminSession) return;
-    const response = await supabase.rpc('taggi_admin_reset_daily_counts', {
+    const response = await supabase.rpc('taggi_admin_close_operational_day', {
       p_group_id: groupSession.groupId,
       p_reason: resetReason.trim(),
       p_session_id: adminSession.id,
@@ -902,7 +1005,7 @@ function TaggiWorkspace() {
     }
     setResetOpen(false);
     await loadGroupData(groupSession.groupId);
-    setToast('Contagens zeradas pela Administração');
+    setToast('Contagens confirmadas e dia finalizado.');
   }
 
   async function addPlatform(event: FormEvent<HTMLFormElement>) {
@@ -1076,6 +1179,10 @@ function TaggiWorkspace() {
 
   async function registerOccurrence(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (dayClosed) {
+      setToast('As contagens de hoje já foram finalizadas pela Administração.');
+      return;
+    }
     if (!supabase || !groupSession) return;
     const platform = platforms.find((item) => item.id === occurrencePlatformId);
     if (!platform) return;
@@ -1330,7 +1437,7 @@ function TaggiWorkspace() {
       group_id: groupSession.groupId,
       category,
       body,
-      app_version: appInfo?.version ?? '1.0.0',
+      app_version: appInfo?.version ?? '1.0.1',
     });
     setFeedbackSent(false);
     if (response.error) {
@@ -1339,7 +1446,7 @@ function TaggiWorkspace() {
     }
     form.reset();
     setFeedbackOpen(false);
-    setToast('Feedback enviado para o desenvolvedor do Tage');
+    setToast('Obrigado! Seu feedback nos ajuda a melhorar o Tage.');
   }
 
   const appStyle = {
@@ -1399,121 +1506,61 @@ function TaggiWorkspace() {
   }
 
   return (
-    <main className="taggi-shell" style={appStyle}>
+    <main
+      className="taggi-shell"
+      style={appStyle}
+      data-update-busy={Boolean(expression.trim() || currentAdminPassword || newAdminPassword || platformBusy || onboardingBusy)}
+    >
       <aside className="taggi-sidebar">
         <BrandMark isDark={isDark} />
         <div className="sm:hidden">
           <BrandMark isDark={isDark} compact />
         </div>
         {isBeta ? (
-          <span className="mx-2 mb-4 inline-flex w-fit rounded-full border border-blue-400/35 bg-blue-400/10 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[.14em] text-blue-300 max-lg:hidden">
+          <span className="taggi-beta-badge mx-2 mb-4 inline-flex w-fit rounded-full px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[.14em] max-lg:hidden">
             Versão Beta
           </span>
         ) : null}
         <nav aria-label="Navegação principal" className="taggi-nav space-y-1.5">
           {navigation.map(({ id, label, icon: Icon }) => (
-              <button
-                key={id}
-                type="button"
-                className="nav-item"
-                data-active={view === id}
-                onClick={() => {
-                  setView(id);
-                  setProfileOpen(false);
-                }}
-                aria-current={view === id ? 'page' : undefined}
-                aria-label={label}
-              >
-                <Icon className="size-5 shrink-0" strokeWidth={1.7} />
-                <span className="text-[15px]">{label}</span>
-              </button>
-            ))}
-        </nav>
-        <div className="mt-auto flex gap-3 px-2 max-lg:flex-col max-sm:hidden">
-          <button
-            aria-label="Configurações"
-            className="sidebar-action"
-            onClick={() => setView('settings')}
-          >
-            <Settings className="size-5" strokeWidth={1.7} />
-          </button>
-          <button
-            aria-label="Feedback e reclamação"
-            className="sidebar-action"
-            onClick={() => setFeedbackOpen(true)}
-          >
-            <MessagesSquare className="size-5" strokeWidth={1.7} />
-          </button>
-        </div>
-      </aside>
-
-      <section className="taggi-main">
-        {minimumRequired ? (
-          <div className="mb-5 flex items-center justify-between gap-4 rounded-2xl border border-amber-400/35 bg-amber-400/10 px-5 py-4 text-sm text-[var(--text-main)]">
-            <div>
-              <p className="font-semibold">Atualização necessária</p>
-              <p className="mt-1 text-[var(--text-soft)]">
-                Esta versão não é mais suportada. Atualize para continuar com
-                segurança.
-              </p>
-            </div>
-            {updateState.phase === 'ready' ? (
-              <Button
-                className="taggi-button-primary shrink-0"
-                onClick={() => void installUpdate()}
-              >
-                Reiniciar e atualizar
-              </Button>
-            ) : (
-              <Button
-                className="taggi-button-subtle shrink-0"
-                variant="outline"
-                onClick={() => void checkForUpdates()}
-              >
-                Verificar agora
-              </Button>
-            )}
-          </div>
-        ) : null}
-        <header className="taggi-topbar relative mb-9 flex items-center justify-between gap-8">
-          {view === 'home' ? (
-            <label className="taggi-search">
-              <Search
-                className="size-6 shrink-0 text-[var(--text-soft)]"
-                strokeWidth={1.7}
-              />
-              <input
-                aria-label="Buscar loja ou plataforma"
-                placeholder="Buscar loja ou plataforma..."
-                className="w-full bg-transparent text-[16px] text-[var(--text-main)] outline-none placeholder:text-[var(--text-soft)]"
-                value={search}
-                onChange={(event) => setSearch(event.target.value)}
-              />
-            </label>
-          ) : (
-            <div />
-          )}
-          <div className="relative flex items-center gap-3 max-sm:hidden">
-            {view !== 'home' ? (
-              <div className="hidden items-center gap-3 rounded-2xl border border-[var(--line)] bg-[var(--surface-soft)] px-4 py-3 xl:flex">
-                {networkState === 'connected' ? (
-                  <Wifi className="size-4 text-emerald-400" />
-                ) : networkState === 'error' ? (
-                  <WifiOff className="size-4 text-red-400" />
-                ) : (
-                  <LoaderCircle className="size-4 animate-spin text-[var(--app-accent)]" />
-                )}
-                <span className="min-w-32 text-sm font-medium text-[var(--text-main)]">
-                  {groupSession.groupName}
-                </span>
-              </div>
-            ) : null}
             <button
-              className="taggi-profile-button flex items-center gap-4 rounded-2xl px-2 py-1 text-left transition hover:bg-[var(--surface-hover)]"
+              key={id}
+              type="button"
+              className="nav-item"
+              data-active={view === id}
+              onClick={() => {
+                setView(id);
+                setProfileOpen(false);
+              }}
+              aria-current={view === id ? 'page' : undefined}
+              aria-label={label}
+            >
+              <Icon className="size-5 shrink-0" strokeWidth={1.7} />
+              <span className="text-[15px]">{label}</span>
+              {id === 'admin' && inventoryUnread > 0 ? (
+                <span
+                  className="nav-badge"
+                  aria-label={
+                    inventoryUnread +
+                    (inventoryUnread === 1
+                      ? ' notificação não lida'
+                      : ' notificações não lidas')
+                  }
+                >
+                  {inventoryUnread > 99 ? '99+' : inventoryUnread}
+                </span>
+              ) : null}
+            </button>
+          ))}
+        </nav>
+        <div className="taggi-sidebar-footer mt-auto px-2 max-sm:hidden">
+          <div className="relative">
+            <button
+              className="taggi-sidebar-profile flex w-full items-center gap-3 rounded-xl p-2 text-left"
               onClick={() => setProfileOpen((open) => !open)}
               aria-expanded={profileOpen}
             >
-              <Avatar size="lg" className="size-14">
+              <Avatar className="size-10 shrink-0">
                 {avatarUrl ? <AvatarImage src={avatarUrl} alt="" /> : null}
                 <AvatarFallback className="bg-[var(--surface-hover)] text-[var(--text-main)]">
                   {groupSession.displayName
@@ -1524,45 +1571,63 @@ function TaggiWorkspace() {
                     .toUpperCase()}
                 </AvatarFallback>
               </Avatar>
-              <span>
-                <span className="block text-[16px] font-medium text-[var(--text-main)]">
+              <span className="min-w-0 flex-1 max-lg:hidden">
+                <strong className="block truncate text-sm font-medium">
                   {groupSession.displayName}
-                </span>
-                <span className="mt-1 block text-[14px] text-[var(--text-soft)]">
+                </strong>
+                <small className="mt-0.5 block text-xs text-[var(--text-soft)]">
                   {currentRoleLabel}
-                </span>
+                </small>
               </span>
-              <ChevronDown className="ml-4 size-5 text-[var(--text-soft)]" />
+              <ChevronDown className="size-4 shrink-0 text-[var(--text-soft)] max-lg:hidden" />
             </button>
             {profileOpen ? (
-              <div className="surface-panel absolute right-0 top-[68px] z-50 w-64 p-2">
-                <button
-                  className="flex w-full items-center justify-between rounded-xl bg-[var(--surface-soft)] px-3 py-3 text-left"
-                  onClick={() => {
-                    void navigator.clipboard.writeText(groupSession.groupCode);
-                    setToast('Código do grupo copiado');
-                  }}
-                >
+              <div className="surface-panel taggi-sidebar-profile-menu absolute bottom-0 left-[calc(100%+14px)] z-50 w-64 p-2">
+                <div className="flex w-full items-center justify-between rounded-xl bg-[var(--surface-soft)] px-3 py-3 text-left">
                   <span>
-                    <span className="block text-xs text-[var(--text-soft)]">
-                      Código da empresa
-                    </span>
-                    <span className="mt-1 block font-mono text-sm font-semibold tracking-[.15em]">
-                      {groupSession.groupCode}
-                    </span>
+                    <span className="block text-xs text-[var(--text-soft)]">Equipe conectada</span>
+                    <span className="mt-1 block text-sm font-semibold">{groupSession.groupName}</span>
                   </span>
-                  <Copy className="size-4 text-[var(--text-muted)]" />
-                </button>
+                  <Wifi className="size-4 text-emerald-400" />
+                </div>
+                <div className="mt-1 flex items-center justify-between gap-3 rounded-xl px-3 py-3">
+                  <span className="min-w-0 select-text">
+                    <span className="block text-xs text-[var(--text-soft)]">Código da equipe</span>
+                    <span className="mt-1 block truncate font-mono text-sm font-semibold tracking-[.08em]">{groupSession.groupCode}</span>
+                  </span>
+                  <button
+                    type="button"
+                    className="grid size-9 shrink-0 place-items-center rounded-lg border border-[var(--line)] text-[var(--text-soft)] transition hover:bg-[var(--surface-hover)] hover:text-[var(--text-main)]"
+                    aria-label="Copiar código da equipe"
+                    onClick={() => {
+                      void copyText(groupSession.groupCode).then((copied) =>
+                        setToast(
+                          copied
+                            ? 'Código da equipe copiado'
+                            : 'Selecione o código exibido e copie manualmente.',
+                        ),
+                      );
+                    }}
+                  >
+                    <Copy className="size-4" />
+                  </button>
+                </div>
                 <label className="flex cursor-pointer items-center gap-3 rounded-xl px-3 py-3 text-sm text-[var(--text-soft)] transition hover:bg-[var(--surface-hover)] hover:text-[var(--text-main)]">
                   <Users className="size-4" />
                   Alterar foto do perfil
-                  <input
-                    className="sr-only"
-                    type="file"
-                    accept="image/*"
-                    onChange={handleAvatar}
-                  />
+                  <input className="sr-only" type="file" accept="image/*" onChange={handleAvatar} />
                 </label>
+                <button
+                  type="button"
+                  className="flex w-full items-center gap-3 rounded-xl px-3 py-3 text-sm text-[var(--text-soft)] transition hover:bg-[var(--surface-hover)] hover:text-[var(--text-main)]"
+                  onClick={() => {
+                    setProfileOpen(false);
+                    setTeamAccessOpen(true);
+                  }}
+                >
+                  <Users className="size-4" />
+                  Equipes e novo grupo
+                </button>
                 <button
                   className="flex w-full items-center gap-3 rounded-xl px-3 py-3 text-sm text-[var(--text-soft)] transition hover:bg-[var(--surface-hover)] hover:text-[var(--text-main)]"
                   onClick={() => {
@@ -1578,12 +1643,65 @@ function TaggiWorkspace() {
                   onClick={() => void leaveGroup()}
                 >
                   <LogOut className="size-4" />
-                  Sair da conta
+                  Desconectar
                 </button>
               </div>
             ) : null}
           </div>
-        </header>
+        </div>
+      </aside>
+
+      <section className="taggi-main">
+        {minimumRequired ? (
+          <div className="mb-5 flex items-center justify-between gap-4 rounded-2xl border border-amber-400/35 bg-amber-400/10 px-5 py-4 text-sm text-[var(--text-main)]">
+            <div>
+              <p className="font-semibold">Atualização necessária</p>
+              <p className="mt-1 text-[var(--text-soft)]">
+                Esta versão não é mais suportada. Atualize para continuar com
+                segurança.
+              </p>
+            </div>
+            {['ready', 'installing'].includes(updateState.phase) ? (
+              <p className="text-sm text-[var(--text-soft)]">{updateState.message}</p>
+            ) : (
+              <Button
+                className="taggi-button-subtle shrink-0"
+                variant="outline"
+                onClick={() => void checkForUpdates()}
+              >
+                Verificar agora
+              </Button>
+            )}
+          </div>
+        ) : null}
+        {view === 'home' ? (
+          <header className="taggi-topbar relative mb-9 flex items-center justify-between gap-8">
+            <label className="taggi-search">
+              <Search
+                className="size-6 shrink-0 text-[var(--text-soft)]"
+                strokeWidth={1.7}
+              />
+              <input
+                aria-label="Buscar loja ou plataforma"
+                placeholder="Buscar loja ou plataforma..."
+                className="w-full bg-transparent text-[16px] text-[var(--text-main)] outline-none placeholder:text-[var(--text-soft)]"
+                value={search}
+                onChange={(event) => setSearch(event.target.value)}
+              />
+            </label>
+          </header>
+        ) : null}
+
+        {dayClosed ? (
+          <div className="day-closed-banner" role="status">
+            <Check className="size-4" />
+            <span>
+              <strong>Dia finalizado.</strong> As contagens de hoje estão
+              confirmadas no Histórico. Um novo dia começará zerado à meia-noite
+              de São Paulo.
+            </span>
+          </div>
+        ) : null}
 
         <div key={view} className="fade-page">
           {view === 'home' ? (
@@ -1698,6 +1816,7 @@ function TaggiWorkspace() {
                     <Button
                       type="submit"
                       className="taggi-button-primary h-11 rounded-xl px-5"
+                      disabled={dayClosed}
                     >
                       <Check className="size-4" />
                       Confirmar lançamento
@@ -1966,6 +2085,7 @@ function TaggiWorkspace() {
             groupId={groupSession.groupId}
             active={view === 'inventory'}
             onToast={setToast}
+            onUnreadChange={setInventoryUnread}
           />
 
           {view === 'admin' ? (
@@ -2049,6 +2169,11 @@ function TaggiWorkspace() {
                       >
                         <Icon className="size-4" />
                         {label}
+                        {id === 'inventory' && inventoryUnread > 0 ? (
+                          <span className="admin-tab-badge">
+                            {inventoryUnread > 99 ? '99+' : inventoryUnread}
+                          </span>
+                        ) : null}
                       </button>
                     ))}
                   </nav>
@@ -2110,10 +2235,17 @@ function TaggiWorkspace() {
                           </div>
                           <div className="mt-6 h-64">
                             <ResponsiveContainer width="100%" height="100%">
-                              <BarChart data={adminChartData} barGap={4}>
+                              <AreaChart data={adminChartData}>
+                                <defs>
+                                  <linearGradient id="adminEntriesFill" x1="0" y1="0" x2="0" y2="1">
+                                    <stop offset="0%" stopColor="var(--app-accent)" stopOpacity={0.42} />
+                                    <stop offset="82%" stopColor="var(--app-accent)" stopOpacity={0.03} />
+                                  </linearGradient>
+                                </defs>
                                 <CartesianGrid
                                   stroke="var(--line)"
                                   vertical={false}
+                                  strokeDasharray="4 7"
                                 />
                                 <XAxis
                                   dataKey="day"
@@ -2141,13 +2273,16 @@ function TaggiWorkspace() {
                                     borderRadius: 12,
                                   }}
                                 />
-                                <Bar
+                                <Area
+                                  type="monotone"
                                   dataKey="entradas"
                                   name="Entradas"
-                                  fill="var(--app-accent)"
-                                  radius={[6, 6, 0, 0]}
+                                  stroke="var(--app-accent)"
+                                  strokeWidth={2.5}
+                                  fill="url(#adminEntriesFill)"
+                                  activeDot={{ r: 5, fill: 'var(--app-accent)', strokeWidth: 0 }}
                                 />
-                              </BarChart>
+                              </AreaChart>
                             </ResponsiveContainer>
                           </div>
                         </section>
@@ -2197,17 +2332,18 @@ function TaggiWorkspace() {
                           </h2>
                           <p className="mt-1 text-sm text-[var(--text-soft)]">
                             As correções são feitas diretamente em Histórico. A
-                            zeragem exige esta área desbloqueada e fica
-                            registrada.
+                            finalização confirma o dia, salva os totais no
+                            Histórico e bloqueia alterações operacionais.
                           </p>
                         </div>
                         <Button
                           variant="outline"
-                          className="taggi-button-subtle shrink-0 text-red-400"
+                          className="taggi-button-subtle shrink-0"
                           onClick={() => setResetOpen(true)}
+                          disabled={dayClosed}
                         >
-                          <RotateCcw className="size-4" />
-                          Zerar contagens
+                          <CheckCircle2 className="size-4" />
+                          {dayClosed ? 'Dia finalizado' : 'Finalizar dia'}
                         </Button>
                       </section>
 
@@ -2339,6 +2475,26 @@ function TaggiWorkspace() {
                             </div>
                           </article>
                         ))}
+                        {!platforms.length ? (
+                          <div className="col-span-2 rounded-2xl border border-dashed border-[var(--line)] bg-[var(--surface-soft)] p-8 text-center max-lg:col-span-1">
+                            <Store className="mx-auto size-7 text-[var(--app-accent)]" />
+                            <h3 className="mt-4 font-medium">
+                              Nenhuma plataforma cadastrada
+                            </h3>
+                            <p className="mx-auto mt-2 max-w-lg text-sm leading-6 text-[var(--text-soft)]">
+                              Crie uma plataforma com sua primeira loja. Depois,
+                              abra Configurar para incluir todas as outras lojas
+                              vinculadas a ela.
+                            </p>
+                            <Button
+                              className="taggi-button-primary mt-5 rounded-xl"
+                              onClick={() => setAddPlatformOpen(true)}
+                            >
+                              <Plus className="size-4" />
+                              Criar primeira plataforma
+                            </Button>
+                          </div>
+                        ) : null}
                       </div>
                     </section>
                   ) : null}
@@ -2427,11 +2583,12 @@ function TaggiWorkspace() {
                   ) : null}
 
                   {adminSection === 'inventory' ? (
-                    <InventoryPanel
+                    <InventoryAdminPanel
                       groupId={groupSession.groupId}
                       active
                       adminSession={adminSession}
                       onToast={setToast}
+                      onUnreadChange={setInventoryUnread}
                     />
                   ) : null}
 
@@ -2467,12 +2624,22 @@ function TaggiWorkspace() {
                           }
                         />
                         <Button
+                          type="submit"
                           variant="outline"
                           className="taggi-button-subtle"
                         >
                           Alterar senha
                         </Button>
                       </form>
+                      <TeamDeletionPanel
+                        groupId={groupSession.groupId}
+                        groupName={groupSession.groupName}
+                        adminSession={adminSession}
+                        onDeleted={async () => {
+                          await signOut('Equipe excluída. Crie uma equipe vazia ou continue em outro acesso salvo.');
+                          await refreshMemberships();
+                        }}
+                      />
                     </section>
                   ) : null}
                 </div>
@@ -2621,9 +2788,9 @@ function TaggiWorkspace() {
                       <h2 className="font-semibold">Atualizações</h2>
                     </div>
                     <p className="mt-3 text-sm leading-6 text-[var(--text-soft)]">
-                      O Tage verifica novas versões automaticamente. Quando uma
-                      atualização estiver pronta, você será avisado para
-                      reiniciar.
+                      O Tage busca e baixa novas versões sozinho. Quando não há
+                      edição ou envio em andamento, ele instala e reabre
+                      automaticamente. Não é necessário clicar em nada.
                     </p>
                     {updateState.phase === 'disabled' ? (
                       <p className="mt-2 text-xs leading-5 text-[var(--text-muted)]">
@@ -2649,27 +2816,7 @@ function TaggiWorkspace() {
                         {updateState.releaseNotes}
                       </p>
                     ) : null}
-                    {updateState.phase === 'ready' ? (
-                      <div className="mt-5 grid grid-cols-2 gap-2">
-                        <Button
-                          variant="outline"
-                          className="taggi-button-subtle"
-                          onClick={() =>
-                            setToast(
-                              'A atualização ficará pronta para quando você decidir reiniciar.',
-                            )
-                          }
-                        >
-                          Mais tarde
-                        </Button>
-                        <Button
-                          className="taggi-button-primary"
-                          onClick={() => void installUpdate()}
-                        >
-                          Reiniciar e atualizar
-                        </Button>
-                      </div>
-                    ) : (
+                    {!['ready', 'installing'].includes(updateState.phase) ? (
                       <Button
                         variant="outline"
                         className="taggi-button-subtle mt-5 w-full"
@@ -2691,13 +2838,13 @@ function TaggiWorkspace() {
                         />
                         Verificar atualizações
                       </Button>
-                    )}
+                    ) : null}
                   </section>
                   <section className="surface-panel p-6">
                     <h2 className="font-semibold">Feedback</h2>
                     <p className="mt-2 text-sm leading-6 text-[var(--text-soft)]">
-                      Envie uma sugestão, elogio ou problema diretamente ao
-                      desenvolvedor do Tage.
+                      Compartilhe uma sugestão, elogio ou problema. Seu relato
+                      nos ajuda a melhorar o Tage.
                     </p>
                     <Button
                       variant="outline"
@@ -2743,6 +2890,16 @@ function TaggiWorkspace() {
                 <p className="mt-3 min-h-20 text-sm leading-7 text-[var(--text-soft)]">
                   {slide.text}
                 </p>
+                <ol className="mt-4 space-y-3 rounded-2xl border border-[var(--line)] bg-[var(--surface-soft)] p-4 text-sm text-[var(--text-soft)]">
+                  {slide.steps.map((step, index) => (
+                    <li key={step} className="flex gap-3 leading-6">
+                      <span className="grid size-6 shrink-0 place-items-center rounded-full bg-[var(--app-accent)] text-xs font-semibold text-white">
+                        {index + 1}
+                      </span>
+                      <span>{step}</span>
+                    </li>
+                  ))}
+                </ol>
                 <div className="mt-6 flex gap-2">
                   {tutorialSlides.map((_, index) => (
                     <span
@@ -2857,8 +3014,8 @@ function TaggiWorkspace() {
           <DialogHeader>
             <DialogTitle>Enviar feedback</DialogTitle>
             <DialogDescription>
-              Seu relato será enviado ao desenvolvedor e aparecerá no Tage
-              Owner com nome, empresa, versão e horário.
+              Agradecemos por compartilhar sua experiência. Seu feedback nos
+              ajuda a melhorar o Tage a cada versão.
             </DialogDescription>
           </DialogHeader>
           <form className="space-y-4" onSubmit={submitFeedback}>
@@ -3094,6 +3251,7 @@ function TaggiWorkspace() {
                     onChange={(event) => setNewStoreName(event.target.value)}
                   />
                   <Button
+                    type="submit"
                     className="taggi-button-subtle"
                     variant="outline"
                     disabled={platformBusy || newStoreName.trim().length < 2}
@@ -3163,6 +3321,7 @@ function TaggiWorkspace() {
             <Button
               type="submit"
               className="taggi-button-primary h-10 w-full rounded-xl"
+              disabled={dayClosed}
             >
               Confirmar ajuste
             </Button>
@@ -3170,13 +3329,22 @@ function TaggiWorkspace() {
         </DialogContent>
       </Dialog>
 
+      <Dialog open={teamAccessOpen} onOpenChange={setTeamAccessOpen}>
+        <DialogContent className="taggi-dialog max-h-[90vh] overflow-y-auto sm:max-w-lg">
+          <DialogTitle className="sr-only">Equipes e acessos</DialogTitle>
+          <DialogDescription className="sr-only">Escolha uma equipe salva ou crie uma operação nova.</DialogDescription>
+          <AccessPanel embedded onComplete={() => setTeamAccessOpen(false)} />
+        </DialogContent>
+      </Dialog>
+
       <Dialog open={resetOpen} onOpenChange={setResetOpen}>
         <DialogContent className="taggi-dialog sm:max-w-md">
           <DialogHeader>
-            <DialogTitle>Zerar contagens do dia?</DialogTitle>
+            <DialogTitle>Finalizar as contagens do dia?</DialogTitle>
             <DialogDescription>
-              Somente a Administração desbloqueada pode concluir. A ação será
-              registrada com responsável, horário e motivo.
+              Os totais serão confirmados no Histórico e novos lançamentos
+              ficarão bloqueados até a meia-noite de São Paulo. A ação é
+              auditável.
             </DialogDescription>
           </DialogHeader>
           <label className="block text-sm text-[var(--text-soft)]">
@@ -3185,7 +3353,7 @@ function TaggiWorkspace() {
               className="taggi-control mt-2"
               value={resetReason}
               onChange={(event) => setResetReason(event.target.value)}
-              placeholder="Ex.: Fechamento da operação"
+              placeholder="Ex.: Encerramento da operação"
             />
           </label>
           <div className="flex justify-end gap-3">
@@ -3197,11 +3365,11 @@ function TaggiWorkspace() {
               Cancelar
             </Button>
             <Button
-              className="bg-red-500 text-white hover:bg-red-500/80"
+              className="taggi-button-primary"
               disabled={resetReason.trim().length < 3}
-              onClick={resetDailyCounts}
+              onClick={closeOperationalDay}
             >
-              Zerar agora
+              Confirmar e finalizar
             </Button>
           </div>
         </DialogContent>
@@ -3306,10 +3474,15 @@ function TaggiWorkspace() {
   );
 }
 
+function ActiveTeamWorkspace() {
+  const { activeMembership } = useAuth();
+  return <TaggiWorkspace key={activeMembership?.groupId ?? 'access'} />;
+}
+
 export default function TaggiApp() {
   return (
     <AuthProvider>
-      <TaggiWorkspace />
+      <ActiveTeamWorkspace />
     </AuthProvider>
   );
 }

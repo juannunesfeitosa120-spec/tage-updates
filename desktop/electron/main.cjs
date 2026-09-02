@@ -1,5 +1,5 @@
 /* oxlint-disable typescript/no-require-imports */
-const { app, BrowserWindow, ipcMain, Notification, session, shell } = require('electron');
+const { app, BrowserWindow, clipboard, ipcMain, Notification, session, shell } = require('electron');
 const path = require('node:path');
 
 const packageMetadata = require('../../package.json');
@@ -81,8 +81,25 @@ function registerUpdaterIpc() {
     const title = String(payload.title ?? 'Tage').slice(0, 120);
     const body = String(payload.body ?? '').slice(0, 500);
     if (!body) return { ok: false };
-    new Notification({ title, body, icon: path.join(__dirname, '../../public/taggi-app-icon.png') }).show();
+    const notification = new Notification({
+      title,
+      body,
+      icon: path.join(__dirname, '../../public/taggi-app-icon.png'),
+    });
+    notification.on('click', () => {
+      if (!mainWindow) return;
+      if (mainWindow.isMinimized()) mainWindow.restore();
+      mainWindow.show();
+      mainWindow.focus();
+    });
+    notification.show();
     return { ok: true };
+  });
+  ipcMain.handle('taggi:copy-text', (_event, value) => {
+    const text = String(value ?? '').slice(0, 10000);
+    if (!text) return { ok: false };
+    clipboard.writeText(text);
+    return { ok: clipboard.readText() === text };
   });
 }
 
@@ -98,6 +115,9 @@ if (!hasSingleInstanceLock) {
   });
 
   void app.whenReady().then(() => {
+    if (process.platform === 'win32') {
+      app.setAppUserModelId(packageMetadata.build?.appId ?? 'com.taggi.desktop');
+    }
     session.defaultSession.setPermissionRequestHandler(
       (_webContents, _permission, callback) => callback(false),
     );

@@ -1,8 +1,8 @@
 {
   "name": "taggi-desktop",
   "productName": "Tage Beta",
-  "version": "1.0.0",
-  "buildNumber": 1,
+  "version": "1.1.6",
+  "buildNumber": 10,
   "taggiReleaseChannel": "beta",
   "description": "Contagens compartilhadas em tempo real para equipes.",
   "author": "Juan Nunes",
@@ -83,6 +83,15 @@
   "build": {
     "appId": "com.taggi.desktop",
     "productName": "Tage Beta",
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "juannunesfeitosa120-spec",
+        "repo": "tage-updates",
+        "channel": "beta",
+        "releaseType": "prerelease"
+      }
+    ],
     "electronDist": "node_modules/electron/dist",
     "asar": true,
     "directories": {

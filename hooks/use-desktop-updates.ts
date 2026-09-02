@@ -2,10 +2,7 @@
 
 import { useCallback, useEffect, useState } from 'react';
 
-import type {
-  TaggiAppInfo,
-  TaggiUpdateState,
-} from '@/desktop/taggi-desktop';
+import type { TaggiAppInfo, TaggiUpdateState } from '@/desktop/taggi-desktop';
 
 const webFallback: TaggiUpdateState = {
   phase: 'disabled',
@@ -18,8 +15,7 @@ const webFallback: TaggiUpdateState = {
 
 export function useDesktopUpdates() {
   const [appInfo, setAppInfo] = useState<TaggiAppInfo | null>(null);
-  const [updateState, setUpdateState] =
-    useState<TaggiUpdateState>(webFallback);
+  const [updateState, setUpdateState] = useState<TaggiUpdateState>(webFallback);
 
   useEffect(() => {
     const desktop = window.taggiDesktop;
@@ -28,13 +24,22 @@ export function useDesktopUpdates() {
     const removeListener = desktop.onUpdateState((state) => {
       if (alive) setUpdateState(state);
     });
-    void Promise.all([desktop.getAppInfo(), desktop.getUpdateState()]).then(
-      ([info, state]) => {
+    void Promise.all([desktop.getAppInfo(), desktop.getUpdateState()])
+      .then(([info, state]) => {
         if (!alive) return;
         setAppInfo(info);
         setUpdateState(state);
-      },
-    );
+      })
+      .catch(() => {
+        if (!alive) return;
+        setUpdateState((current) => ({
+          ...current,
+          phase: 'error',
+          message:
+            'Não foi possível consultar o atualizador agora. O Tage continua funcionando normalmente.',
+          errorCode: 'UPDATE_STATE_UNAVAILABLE',
+        }));
+      });
     return () => {
       alive = false;
       removeListener();
@@ -48,11 +53,38 @@ export function useDesktopUpdates() {
       phase: 'checking',
       message: 'Verificando atualizações...',
     }));
-    await window.taggiDesktop.checkForUpdates();
+    try {
+      await window.taggiDesktop.checkForUpdates();
+    } catch {
+      setUpdateState((current) => ({
+        ...current,
+        phase: 'error',
+        message:
+          'Não foi possível verificar atualizações agora. Tente novamente mais tarde.',
+        errorCode: 'UPDATE_CHECK_UNAVAILABLE',
+      }));
+    }
   }, []);
 
   const installUpdate = useCallback(async () => {
-    await window.taggiDesktop?.installUpdate();
+    try {
+      const result = await window.taggiDesktop?.installUpdate();
+      if (result && !result.ok) {
+        setUpdateState((current) => ({
+          ...current,
+          message:
+            'A atualização ainda não está pronta para ser aplicada. Verifique novamente em instantes.',
+        }));
+      }
+    } catch {
+      setUpdateState((current) => ({
+        ...current,
+        phase: 'error',
+        message:
+          'Não foi possível iniciar a atualização. Feche e abra o Tage e tente novamente.',
+        errorCode: 'UPDATE_INSTALL_UNAVAILABLE',
+      }));
+    }
   }, []);
 
   return {

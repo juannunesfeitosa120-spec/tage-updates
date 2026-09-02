@@ -21,7 +21,6 @@ import {
   Paperclip,
   Search,
   Send,
-  Smile,
   Users,
   X,
 } from 'lucide-react';
@@ -35,7 +34,6 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
-import { Input } from '@/components/ui/input';
 import { readableError } from '@/lib/taggi';
 import { supabase } from '@/lib/supabase';
 
@@ -63,18 +61,11 @@ type ChatMessage = {
   attachmentName: string | null;
   attachmentSize: number | null;
   attachmentMime: string | null;
+  attachmentUrl: string | null;
   replyTo: string | null;
   createdAt: string;
   pending?: boolean;
   failed?: boolean;
-};
-type Reaction = { messageId: string; userId: string; emoji: string };
-
-const emojiGroups = {
-  Recentes: ['👍', '❤️', '😂', '🎉', '🙏', '✅'],
-  Pessoas: ['😀', '😃', '😊', '😍', '🤔', '😅', '😢', '😡'],
-  Objetos: ['📦', '🏷️', '📊', '📎', '💡', '🚀'],
-  Símbolos: ['✅', '⚠️', '❌', '❤️', '➕', '⭐'],
 };
 const CHAT_BUCKET = 'taggi-chat';
 const UUID_PATTERN =
@@ -102,6 +93,52 @@ const initials = (name: string) =>
     .slice(0, 2)
     .join('')
     .toUpperCase();
+const isImageAttachment = (
+  message: Pick<ChatMessage, 'type' | 'attachmentMime'>,
+) => message.type === 'image' || message.attachmentMime?.startsWith('image/');
+
+function PendingFilePreview({ file }: { file: File }) {
+  const [previewUrl, setPreviewUrl] = useState('');
+
+  useEffect(() => {
+    if (!file.type.startsWith('image/')) {
+      return;
+    }
+    let active = true;
+    const reader = new FileReader();
+    reader.addEventListener('load', () => {
+      if (active && typeof reader.result === 'string') {
+        setPreviewUrl(reader.result);
+      }
+    });
+    reader.readAsDataURL(file);
+    return () => {
+      active = false;
+      reader.abort();
+    };
+  }, [file]);
+
+  return previewUrl ? (
+    <div className="chat-image-preview">
+      {/* oxlint-disable-next-line nextjs/no-img-element */}
+      <img src={previewUrl} alt={'Prévia de ' + file.name} />
+      <div>
+        <strong>{file.name}</strong>
+        <small>{formatSize(file.size)}</small>
+      </div>
+    </div>
+  ) : (
+    <div className="chat-file-preview">
+      <span>
+        <File className="size-6" />
+      </span>
+      <div>
+        <strong>{file.name}</strong>
+        <small>{formatSize(file.size)}</small>
+      </div>
+    </div>
+  );
+}
 
 export function ChatPanel({
   groupId,
@@ -125,12 +162,10 @@ export function ChatPanel({
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [selectedId, setSelectedId] = useState('');
   const [messages, setMessages] = useState<ChatMessage[]>([]);
-  const [reactions, setReactions] = useState<Reaction[]>([]);
   const [readMessageIds, setReadMessageIds] = useState<Set<string>>(new Set());
   const [text, setText] = useState('');
   const [conversationSearch, setConversationSearch] = useState('');
   const [messageSearch, setMessageSearch] = useState('');
-  const [emojiOpen, setEmojiOpen] = useState(false);
   const [pendingFile, setPendingFile] = useState<File | null>(null);
   const [replyTo, setReplyTo] = useState<ChatMessage | null>(null);
   const [noticeOpen, setNoticeOpen] = useState(!noticeSeen);
@@ -146,6 +181,9 @@ export function ChatPanel({
     () => new Map(members.map((m) => [m.userId, m])),
     [members],
   );
+  const conversationsRef = useRef<Conversation[]>([]);
+  const memberMapRef = useRef(memberMap);
+  const refreshMembershipsRef = useRef(refreshMemberships);
   const selected =
     conversations.find((c) => c.id === selectedId) ?? conversations[0];
   const visibleConversations = conversations.filter((c) =>
@@ -164,6 +202,15 @@ export function ChatPanel({
   useEffect(() => {
     selectedIdRef.current = selectedId;
   }, [selectedId]);
+  useEffect(() => {
+    conversationsRef.current = conversations;
+  }, [conversations]);
+  useEffect(() => {
+    memberMapRef.current = memberMap;
+  }, [memberMap]);
+  useEffect(() => {
+    refreshMembershipsRef.current = refreshMemberships;
+  }, [refreshMemberships]);
 
   const loadConversations = useCallback(async () => {
     if (!supabase) return;
@@ -186,7 +233,7 @@ export function ChatPanel({
     const privateOther = new Map<string, ChatMember>();
     for (const item of membership.data ?? []) {
       if (item.user_id !== userId) {
-        const member = memberMap.get(item.user_id);
+        const member = memberMapRef.current.get(item.user_id);
         if (member) privateOther.set(item.conversation_id, member);
       }
     }
@@ -204,7 +251,7 @@ export function ChatPanel({
     setConversations(next);
     if (!selectedIdRef.current && next[0])
       setSelectedId(next.find((c) => c.type === 'group')?.id ?? next[0].id);
-  }, [groupId, memberMap, onToast, userId]);
+  }, [groupId, onToast, userId]);
 
   const loadMessages = useCallback(
     async (conversationId: string, before?: string) => {
@@ -224,7 +271,25 @@ export function ChatPanel({
         onToast(readableError(result.error));
         return;
       }
-      const next = [...(result.data ?? [])].reverse().map((item) => ({
+      const rows = [...(result.data ?? [])].reverse();
+      const imagePaths = rows.flatMap((item) =>
+        item.attachment_path &&
+        (item.message_type === 'image' ||
+          item.attachment_mime?.startsWith('image/'))
+          ? [item.attachment_path]
+          : [],
+      );
+      const signedResult = imagePaths.length
+        ? await supabase.storage
+            .from(CHAT_BUCKET)
+            .createSignedUrls(imagePaths, 3600)
+        : { data: [], error: null };
+      const signedUrlByPath = new Map(
+        (signedResult.data ?? []).flatMap((item) =>
+          item.path && item.signedUrl ? [[item.path, item.signedUrl]] : [],
+        ),
+      );
+      const next: ChatMessage[] = rows.map((item) => ({
         id: item.id,
         conversationId: item.conversation_id,
         senderId: item.sender_user_id,
@@ -234,6 +299,9 @@ export function ChatPanel({
         attachmentName: item.attachment_name,
         attachmentSize: item.attachment_size,
         attachmentMime: item.attachment_mime,
+        attachmentUrl: item.attachment_path
+          ? (signedUrlByPath.get(item.attachment_path) ?? null)
+          : null,
         replyTo: item.reply_to_message_id,
         createdAt: item.created_at,
       }));
@@ -250,31 +318,14 @@ export function ChatPanel({
       );
       const ids = next.map((item) => item.id);
       if (ids.length) {
-        const [reactionResult, readResult] = await Promise.all([
-          supabase
-            .from('taggi_chat_reactions')
-            .select('message_id,user_id,emoji')
-            .in('message_id', ids),
-          supabase
-            .from('taggi_chat_reads')
-            .select('message_id,user_id')
-            .in('message_id', ids),
-        ]);
-        setReactions((current) =>
-          before
-            ? [
-                ...(reactionResult.data?.map((r) => ({
-                  messageId: r.message_id,
-                  userId: r.user_id,
-                  emoji: r.emoji,
-                })) ?? []),
-                ...current,
-              ]
-            : (reactionResult.data?.map((r) => ({
-                messageId: r.message_id,
-                userId: r.user_id,
-                emoji: r.emoji,
-              })) ?? []),
+        const readResult = await supabase
+          .from('taggi_chat_reads')
+          .select('message_id,user_id')
+          .in('message_id', ids);
+        const alreadyReadByCurrentUser = new Set(
+          (readResult.data ?? [])
+            .filter((item) => item.user_id === userId)
+            .map((item) => item.message_id),
         );
         setReadMessageIds(
           new Set(
@@ -284,7 +335,11 @@ export function ChatPanel({
           ),
         );
         const unread = next
-          .filter((item) => item.senderId !== userId)
+          .filter(
+            (item) =>
+              item.senderId !== userId &&
+              !alreadyReadByCurrentUser.has(item.id),
+          )
           .map((item) => ({
             message_id: item.id,
             user_id: userId,
@@ -338,18 +393,25 @@ export function ChatPanel({
             content: string;
             message_type: string;
           };
-          if (row.sender_user_id !== userId && (!active || document.hidden)) {
+          if (row.sender_user_id !== userId) {
             const author =
-              memberMap.get(row.sender_user_id)?.displayName ?? 'Equipe';
-            const conversation = conversations.find(
+              memberMapRef.current.get(row.sender_user_id)?.displayName ??
+              'Equipe';
+            const conversation = conversationsRef.current.find(
               (item) => item.id === row.conversation_id,
             );
             const title =
               conversation?.type === 'group' ? `${author} • Grupo` : author;
+            const body =
+              row.message_type === 'text'
+                ? row.content.trim() || 'Enviou uma mensagem'
+                : row.message_type === 'image'
+                  ? 'Enviou uma imagem'
+                  : 'Enviou um arquivo';
+            onToast(`${title}: ${body.slice(0, 160)}`);
             void window.taggiDesktop?.showNotification?.({
               title,
-              body:
-                row.message_type === 'text' ? row.content : 'Enviou um arquivo',
+              body,
             });
           }
           void loadConversations();
@@ -361,35 +423,35 @@ export function ChatPanel({
       )
       .on(
         'postgres_changes',
-        { event: '*', schema: 'public', table: 'taggi_chat_reactions' },
-        () => {
-          if (selectedIdRef.current) void loadMessages(selectedIdRef.current);
-        },
-      )
-      .on(
-        'postgres_changes',
         { event: '*', schema: 'public', table: 'taggi_chat_reads' },
-        () => {
-          if (selectedIdRef.current) void loadMessages(selectedIdRef.current);
+        (payload) => {
+          const row = payload.new as {
+            message_id?: string;
+            user_id?: string;
+          };
+          if (row.message_id && row.user_id && row.user_id !== userId) {
+            setReadMessageIds((current) => {
+              const next = new Set(current);
+              next.add(row.message_id!);
+              return next;
+            });
+          }
         },
       )
       .on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'taggi_user_presence', filter },
-        () => void refreshMemberships(),
+        () => void refreshMembershipsRef.current(),
       )
       .subscribe();
     return () => {
       void client.removeChannel(channel);
     };
   }, [
-    active,
-    conversations,
     groupId,
     loadConversations,
     loadMessages,
-    memberMap,
-    refreshMemberships,
+    onToast,
     userId,
   ]);
 
@@ -471,6 +533,7 @@ export function ChatPanel({
       attachmentName: file?.name ?? null,
       attachmentSize: file?.size ?? null,
       attachmentMime: file?.type ?? null,
+      attachmentUrl: null,
       replyTo: isPersistedMessageId(replyTarget) ? replyTarget : null,
       createdAt: new Date().toISOString(),
       pending: true,
@@ -531,22 +594,6 @@ export function ChatPanel({
       void sendMessage();
     }
   }
-  async function toggleReaction(messageId: string, emoji: string) {
-    if (!supabase || !isPersistedMessageId(messageId)) return;
-    const mine = reactions.find(
-      (r) =>
-        r.messageId === messageId && r.userId === userId && r.emoji === emoji,
-    );
-    const response = mine
-      ? await supabase
-          .from('taggi_chat_reactions')
-          .delete()
-          .match({ message_id: messageId, user_id: userId, emoji })
-      : await supabase
-          .from('taggi_chat_reactions')
-          .insert({ message_id: messageId, user_id: userId, emoji });
-    if (response.error) onToast(readableError(response.error));
-  }
   async function acknowledgeNotice() {
     if (!supabase) return;
     const response = await supabase.rpc('taggi_acknowledge_chat_retention', {
@@ -576,11 +623,16 @@ export function ChatPanel({
 
   async function openAttachment(message: ChatMessage) {
     if (!supabase || !message.attachmentPath) return;
-    const result = await supabase.storage
-      .from(CHAT_BUCKET)
-      .createSignedUrl(message.attachmentPath, 300, {
-        download: message.attachmentName ?? true,
-      });
+    if (isImageAttachment(message) && message.attachmentUrl) {
+      window.open(message.attachmentUrl, '_blank', 'noopener,noreferrer');
+      return;
+    }
+    const bucket = supabase.storage.from(CHAT_BUCKET);
+    const result = isImageAttachment(message)
+      ? await bucket.createSignedUrl(message.attachmentPath, 300)
+      : await bucket.createSignedUrl(message.attachmentPath, 300, {
+          download: message.attachmentName ?? true,
+        });
     if (result.error) {
       onToast(readableError(result.error));
       return;
@@ -755,14 +807,6 @@ export function ChatPanel({
                 new Date(message.createdAt).getTime() -
                   new Date(previous.createdAt).getTime() <
                   5 * 60000;
-              const groupedReactions = new Map<string, Reaction[]>();
-              for (const reaction of reactions.filter(
-                (item) => item.messageId === message.id,
-              ))
-                groupedReactions.set(reaction.emoji, [
-                  ...(groupedReactions.get(reaction.emoji) ?? []),
-                  reaction,
-                ]);
               const replied = messages.find(
                 (item) => item.id === message.replyTo,
               );
@@ -801,7 +845,26 @@ export function ChatPanel({
                         </div>
                       ) : null}
                       {message.content ? <p>{message.content}</p> : null}
-                      {message.attachmentName ? (
+                      {message.attachmentName &&
+                      isImageAttachment(message) &&
+                      message.attachmentUrl ? (
+                        <button
+                          className="chat-image-card"
+                          onClick={() => void openAttachment(message)}
+                          aria-label={'Abrir imagem ' + message.attachmentName}
+                        >
+                          {/* oxlint-disable-next-line nextjs/no-img-element */}
+                          <img
+                            src={message.attachmentUrl}
+                            alt={message.attachmentName}
+                            loading="lazy"
+                          />
+                          <span>
+                            {message.attachmentName} •{' '}
+                            {formatSize(message.attachmentSize)}
+                          </span>
+                        </button>
+                      ) : message.attachmentName ? (
                         <button
                           className="chat-file-card"
                           onClick={() => void openAttachment(message)}
@@ -834,22 +897,12 @@ export function ChatPanel({
                         {isPersistedMessageId(message.id) &&
                         !message.pending &&
                         !message.failed ? (
-                          <>
-                            <button
-                              title="Reagir"
-                              onClick={() =>
-                                void toggleReaction(message.id, '👍')
-                              }
-                            >
-                              <Smile className="size-3.5" />
-                            </button>
-                            <button
-                              title="Responder"
-                              onClick={() => setReplyTo(message)}
-                            >
-                              ↩
-                            </button>
-                          </>
+                          <button
+                            title="Responder"
+                            onClick={() => setReplyTo(message)}
+                          >
+                            ↩
+                          </button>
                         ) : null}
                         <button
                           title="Copiar"
@@ -868,23 +921,6 @@ export function ChatPanel({
                       >
                         Não foi possível enviar • Tentar novamente
                       </button>
-                    ) : null}
-                    {groupedReactions.size ? (
-                      <div className="chat-reactions">
-                        {[...groupedReactions].map(([emoji, items]) => (
-                          <button
-                            key={emoji}
-                            data-mine={items.some(
-                              (item) => item.userId === userId,
-                            )}
-                            onClick={() =>
-                              void toggleReaction(message.id, emoji)
-                            }
-                          >
-                            {emoji} {items.length}
-                          </button>
-                        ))}
-                      </div>
                     ) : null}
                   </div>
                 </article>
@@ -914,42 +950,6 @@ export function ChatPanel({
               </div>
             ) : null}
             <form onSubmit={sendMessage}>
-              <div className="chat-emoji-anchor">
-                <button
-                  type="button"
-                  aria-label="Emoji"
-                  onClick={() => setEmojiOpen((open) => !open)}
-                >
-                  <Smile className="size-5" />
-                </button>
-                {emojiOpen ? (
-                  <div className="chat-emoji-picker">
-                    <label>
-                      <Search className="size-3.5" />
-                      <input placeholder="Pesquisar emoji" />
-                    </label>
-                    {Object.entries(emojiGroups).map(([group, items]) => (
-                      <div key={group}>
-                        <p>{group}</p>
-                        <div>
-                          {items.map((emoji) => (
-                            <button
-                              type="button"
-                              key={emoji}
-                              onClick={() => {
-                                setText((value) => value + emoji);
-                                setEmojiOpen(false);
-                              }}
-                            >
-                              {emoji}
-                            </button>
-                          ))}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                ) : null}
-              </div>
               <label className="chat-attach-button" aria-label="Anexar arquivo">
                 <Paperclip className="size-5" />
                 <input
@@ -971,6 +971,7 @@ export function ChatPanel({
                 onKeyDown={handleInputKey}
               />
               <Button
+                type="submit"
                 className="taggi-button-primary chat-send-button"
                 aria-label="Enviar"
                 disabled={sending || (!text.trim() && !pendingFile)}
@@ -1002,17 +1003,7 @@ export function ChatPanel({
               Confira o arquivo antes de enviar para esta conversa.
             </DialogDescription>
           </DialogHeader>
-          {pendingFile ? (
-            <div className="chat-file-preview">
-              <span>
-                <File className="size-6" />
-              </span>
-              <div>
-                <strong>{pendingFile.name}</strong>
-                <small>{formatSize(pendingFile.size)}</small>
-              </div>
-            </div>
-          ) : null}
+          {pendingFile ? <PendingFilePreview file={pendingFile} /> : null}
           <div className="flex justify-end gap-2">
             <Button
               variant="outline"
@@ -1038,9 +1029,9 @@ export function ChatPanel({
           <DialogHeader>
             <DialogTitle>Sobre o histórico do chat</DialogTitle>
             <DialogDescription>
-              Para manter o Tage rápido e otimizar o armazenamento, as
-              mensagens e arquivos enviados pelo chat ficam disponíveis durante
-              30 dias. Após esse período, são removidos automaticamente.
+              Para manter o Tage rápido e otimizar o armazenamento, as mensagens
+              e arquivos enviados pelo chat ficam disponíveis durante 30 dias.
+              Após esse período, são removidos automaticamente.
             </DialogDescription>
           </DialogHeader>
           <Button

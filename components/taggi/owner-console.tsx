@@ -614,6 +614,7 @@ export function OwnerConsole({
               />
             ) : null}
             <Button
+              type="submit"
               className="taggi-button-primary h-12 w-full"
               disabled={busy}
             >
@@ -1135,7 +1136,9 @@ export function OwnerConsole({
               min="1"
               defaultValue="25"
             />
-            <Button className="taggi-button-primary w-full">Criar plano</Button>
+            <Button type="submit" className="taggi-button-primary w-full">
+              Criar plano
+            </Button>
           </form>
         </DialogContent>
       </Dialog>
@@ -1216,7 +1219,7 @@ export function OwnerConsole({
                 name="note"
                 placeholder="Observação opcional"
               />
-              <Button className="taggi-button-primary w-full">
+              <Button type="submit" className="taggi-button-primary w-full">
                 Gerar licença
               </Button>
             </form>
@@ -1275,7 +1278,7 @@ export function OwnerConsole({
                 type="datetime-local"
               />
             </label>
-            <Button className="taggi-button-primary w-full">
+            <Button type="submit" className="taggi-button-primary w-full">
               Salvar plano
             </Button>
           </form>
@@ -1353,7 +1356,7 @@ export function OwnerConsole({
               />
               Atualização obrigatória
             </label>
-            <Button className="taggi-button-primary w-full">
+            <Button type="submit" className="taggi-button-primary w-full">
               Registrar versão
             </Button>
           </form>
@@ -1389,7 +1392,7 @@ export function OwnerConsole({
                   required
                 />
               </label>
-              <Button className="taggi-button-primary w-full">
+              <Button type="submit" className="taggi-button-primary w-full">
                 Salvar configuração
               </Button>
             </form>

@@ -42,6 +42,11 @@ export function readableError(error: unknown, fallback = 'Não foi possível con
   if (message.includes('User already registered')) return 'Este e-mail já possui uma conta. Use “Entrar”.';
   if (message.includes('Password should be')) return 'A senha precisa ter pelo menos 8 caracteres.';
   if (message.includes('rate limit')) return 'Muitas tentativas seguidas. Aguarde um pouco e tente novamente.';
-  if (message.includes('Failed to fetch')) return 'Sem conexão com o servidor. Verifique a internet.';
+  if (message.includes('Failed to fetch')) {
+    const offline = typeof navigator !== 'undefined' && !navigator.onLine;
+    return offline
+      ? 'Você está sem internet. Reconecte-se para continuar sincronizando.'
+      : 'O servidor não respondeu agora. O Tage continuará tentando sincronizar.';
+  }
   return message || fallback;
 }
