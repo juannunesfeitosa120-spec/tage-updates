@@ -1,0 +1,42 @@
+{
+  "kind": "desktop_release_artifacts",
+  "product": "Tage Beta",
+  "version": "1.2.0-beta.2",
+  "build_number": 18,
+  "channel": "beta",
+  "platform": "windows-x64",
+  "source": {
+    "visibility": "private",
+    "commit": "c7e623ff3be12372f45c30f22c5275f214431f07",
+    "base": "1.1.8 with administrative pickup planning",
+    "repositoryPurpose": "This public repository hosts update artifacts. The release tag identifies this artifact manifest, not an application source checkout."
+  },
+  "validation": {
+    "release_tests": 68,
+    "typecheck": "passed",
+    "renderer": "passed",
+    "production_backend": "mndlnamnfukknqhswkiu",
+    "updater_sha512": "verified",
+    "blockmap": "present"
+  },
+  "artifacts": [
+    {
+      "name": "Tage-Beta-Setup-1.2.0-beta.2.exe",
+      "bytes": 135466536,
+      "sha256": "9380e457c35c3660da01011205d47723c58b89bf2f18a7f68a9a1daafdf66d8a",
+      "sha512": "BZH37qwavGLEi8xv/O/bl5FrBaVwO9SfFYUGf6vTRVtrcryeRahN/un0vLZQxl275puTM3avLTg+MZIMOVxKvA=="
+    },
+    {
+      "name": "Tage-Beta-Setup-1.2.0-beta.2.exe.blockmap",
+      "bytes": 141816,
+      "sha256": "9df362d995c8c7dc52567762793144a2fb2bdd6625c48792564170be202adaa8",
+      "sha512": "TSm3nBXu8YTDuMwrq7uA4VUAwZv7zgNGOcy6PgLQZg5glCrRD+vGcAOwm8QIGU7MFYkWTYfzPq5rrsUe475f4A=="
+    },
+    {
+      "name": "beta.yml",
+      "bytes": 1149,
+      "sha256": "3a75f24506cfe5f0586b9eb187e61591eb26ac90c6a0b6e8f5bfa4ab97d4b046",
+      "sha512": "nLA5Fq9bqr3l5fOZwbkMZBjpQdu1k9dWDrsQ8wtqenNgIN4q/fDYKcJQ7EMBdIN/3eDKIsU+mLis5MPwFXoFDw=="
+    }
+  ]
+}
