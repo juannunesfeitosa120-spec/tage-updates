@@ -1,0 +1,48 @@
+{
+  "kind": "desktop_release_artifacts",
+  "product": "Tage Beta",
+  "version": "1.2.0-beta.5",
+  "build_number": 21,
+  "channel": "beta",
+  "platform": "windows-x64",
+  "source": {
+    "visibility": "private",
+    "commit": "1fca8d1ef731a10c8564e38d59c4c9497a335dae",
+    "base": "1.2.0-beta.4 with progressive History",
+    "repositoryPurpose": "This public repository hosts update artifacts. The release tag identifies this artifact manifest, not an application source checkout."
+  },
+  "validation": {
+    "release_tests": 87,
+    "release_lint": "passed",
+    "typecheck": "passed",
+    "renderer": "passed",
+    "web_build": "passed",
+    "sql_history_checks": 17,
+    "sql_roles_checks": 18,
+    "visual_review": "desktop and 375px browser fixtures",
+    "production_backend": "mndlnamnfukknqhswkiu",
+    "updater_sha512": "verified",
+    "blockmap": "present",
+    "authenticode": "NotSigned (existing Beta distribution)"
+  },
+  "artifacts": [
+    {
+      "name": "Tage-Beta-Setup-1.2.0-beta.5.exe",
+      "bytes": 135493231,
+      "sha256": "87eff86ccf6c1cf556856ae07601c30d54389e1cd2c4e603c85a327404743013",
+      "sha512": "AF22xZCtC2XK+BRSrW3Y1HaOsB0xXchhhblPEjXd3lqvWpZ9gbKdiF8p6/S1S9x3ur90KWT679KN1qFP35yZAA=="
+    },
+    {
+      "name": "Tage-Beta-Setup-1.2.0-beta.5.exe.blockmap",
+      "bytes": 141412,
+      "sha256": "8802e03443577290ba84f77378246052271f3f05712b44d69ee0cd40aaf557bf",
+      "sha512": "wV6lNel/MSQL3PXWndbYCDwdcfBdiUOJO4o+YAD3IOYOfPHJlDCvIY8F3a/0qr0hcl2aj/ro71CN30kg5QVAQw=="
+    },
+    {
+      "name": "beta.yml",
+      "bytes": 1188,
+      "sha256": "a0c244524d49e36fbc4710d7f00619adedc6da78d38aeb6dc3a999a5c7f1f322",
+      "sha512": "Ww3TcP+Ue/AQ0Aos4jldthSK84QxXeATTjGkCzMgknThoqLVtRVfQ3Z7PHuk35UBebQcEwQN06lQKdwTC+rPzg=="
+    }
+  ]
+}
